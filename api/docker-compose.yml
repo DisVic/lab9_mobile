@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    container_name: financy-api
+    ports:
+      - "5001:5000"
+    restart: unless-stopped
+
