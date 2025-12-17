@@ -1,8 +1,27 @@
 services:
+  db:
+    image: postgres:16
+    container_name: financy-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: financy
+      POSTGRES_PASSWORD: financy_pass_123
+      POSTGRES_DB: financy_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - financy_pgdata:/var/lib/postgresql/data
+
   api:
     build: .
     container_name: financy-api
     ports:
       - "5001:5000"
     restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://financy:financy_pass_123@db:5432/financy_db
+    depends_on:
+      - db
 
+volumes:
+  financy_pgdata:
