@@ -1,13 +1,18 @@
+
 package com.example.financyapp.ui
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -33,6 +38,16 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_OPERATIONS = "operations"
     }
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            Log.d("MainActivity", "Notification permission granted")
+        } else {
+            Log.d("MainActivity", "Notification permission denied")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -44,6 +59,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         createNotificationChannel()
+        requestNotificationPermission()
 
         recyclerView = findViewById(R.id.recyclerViewOperations)
         balanceTextView = findViewById(R.id.textViewBalance)
@@ -96,6 +112,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    Log.d("MainActivity", "Notification permission already granted")
+                }
+                else -> {
+                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
+    }
+
     private fun loadOperations() {
         Log.d("MainActivity", "loadOperations request")
         ApiClient.operationApi.getOperations().enqueue(object : Callback<List<Operation>> {
@@ -138,7 +170,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun sortOperations(list: List<Operation>): List<Operation> =
         list.sortedWith(
-            compareByDescending<Operation> { LocalDate.parse(it.date) }
-                .thenByDescending { it.id ?: 0 }
+            compareByDescending<Operation> {
+                runCatching { LocalDate.parse(it.date) }.getOrElse { LocalDate.MIN }
+            }.thenByDescending { it.id ?: 0 }
         )
+
 }

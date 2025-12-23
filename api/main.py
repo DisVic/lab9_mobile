@@ -28,7 +28,6 @@ app.add_middleware(
 # --- DB config ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    # дефолт для локального запуска (в Docker лучше задавать env DATABASE_URL)
     DATABASE_URL = "postgresql+psycopg2://financy:financy_pass_123@localhost:5432/financy_db"
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -46,7 +45,6 @@ class Operation(Base):
     date = Column(String, nullable=False)
     note = Column(String, nullable=False)
 
-# Для учебного проекта ок (в прод лучше Alembic миграции)  [web:150]
 Base.metadata.create_all(bind=engine)
 
 def get_db() -> Session:

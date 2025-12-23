@@ -1,21 +1,26 @@
 package com.example.financyapp.ui
 
+import android.app.DatePickerDialog
 import android.app.NotificationManager
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.example.financyapp.R
 import com.example.financyapp.api.ApiClient
 import com.example.financyapp.model.Operation
-import com.example.financyapp.R
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 import java.text.SimpleDateFormat
-import java.util.*
+import java.time.LocalDate
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class AddOperationActivity : AppCompatActivity() {
     private lateinit var radioGroupType: RadioGroup
@@ -34,11 +39,26 @@ class AddOperationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_add_operation)
 
-        val root = findViewById<android.view.View>(R.id.root)
+        applyInsets()
+        bindViews()
+        setupCategorySpinner()
+        setupDateFieldWithPicker()
+
+        // По желанию: сразу ставим сегодняшнюю дату
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        editTextDate.setText(dateFormat.format(Date()))
+
+        buttonSave.setOnClickListener { saveOperation() }
+    }
+
+    private fun applyInsets() {
+        val root = findViewById<View>(R.id.root)
+
         val initialPaddingLeft = root.paddingLeft
         val initialPaddingTop = root.paddingTop
         val initialPaddingRight = root.paddingRight
         val initialPaddingBottom = root.paddingBottom
+
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(
@@ -49,35 +69,71 @@ class AddOperationActivity : AppCompatActivity() {
             )
             insets
         }
+    }
 
+    private fun bindViews() {
         radioGroupType = findViewById(R.id.radioGroupType)
         editTextAmount = findViewById(R.id.editTextAmount)
         spinnerCategory = findViewById(R.id.spinnerCategory)
         editTextDate = findViewById(R.id.editTextDate)
         editTextNote = findViewById(R.id.editTextNote)
         buttonSave = findViewById(R.id.buttonSave)
+    }
 
-        val categories = arrayOf("Еда", "Транспорт", "Развлечения", "Здоровье", "Одежда", "Другое", "Зарплата", "Подарки", "Инвестиции")
+    private fun setupCategorySpinner() {
+        val categories = arrayOf(
+            "Еда", "Транспорт", "Развлечения", "Здоровье", "Одежда",
+            "Другое", "Зарплата", "Подарки", "Инвестиции"
+        )
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = adapter
+    }
 
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        editTextDate.setText(dateFormat.format(Date()))
+    private fun setupDateFieldWithPicker() {
+        // Делаем поле “как кнопка”: только выбор через календарь
+        editTextDate.isFocusable = false
+        editTextDate.isClickable = true
+        editTextDate.isLongClickable = false
 
-        buttonSave.setOnClickListener {
-            saveOperation()
+        editTextDate.setOnClickListener {
+            showDatePicker()
         }
+    }
+
+    private fun showDatePicker() {
+        val c = Calendar.getInstance()
+        val year = c.get(Calendar.YEAR)
+        val month = c.get(Calendar.MONTH) // 0..11
+        val day = c.get(Calendar.DAY_OF_MONTH)
+
+        DatePickerDialog(
+            this,
+            { _, y, m, d ->
+                val mm = (m + 1).toString().padStart(2, '0')
+                val dd = d.toString().padStart(2, '0')
+                editTextDate.setText("$y-$mm-$dd") // строго yyyy-MM-dd
+            },
+            year,
+            month,
+            day
+        ).show()
     }
 
     private fun saveOperation() {
         Log.d("AddOperation", "start saveOperation")
+
         val selectedRadioId = radioGroupType.checkedRadioButtonId
+        if (selectedRadioId == -1) {
+            Toast.makeText(this, "Выберите тип операции", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val type = if (selectedRadioId == R.id.radioButtonIncome) "income" else "expense"
-        val amountText = editTextAmount.text.toString()
+        val amountText = editTextAmount.text.toString().trim()
         val category = spinnerCategory.selectedItem.toString()
-        val date = editTextDate.text.toString()
-        val note = editTextNote.text.toString()
+        val date = editTextDate.text.toString().trim()
+        val note = editTextNote.text.toString().trim()
 
         if (amountText.isEmpty()) {
             editTextAmount.error = "Введите сумму"
@@ -95,6 +151,12 @@ class AddOperationActivity : AppCompatActivity() {
             return
         }
 
+        // Строгая проверка формата/валидности даты (чтобы не было 2025-10---10)
+        if (runCatching { LocalDate.parse(date) }.isFailure) {
+            editTextDate.error = "Дата должна быть в формате YYYY-MM-DD"
+            return
+        }
+
         val operation = Operation(
             type = type,
             amount = amount,
@@ -105,22 +167,30 @@ class AddOperationActivity : AppCompatActivity() {
 
         Log.d("AddOperation", "sending createOperation: $operation")
         ApiClient.operationApi.createOperation(operation).enqueue(object : Callback<Operation> {
-            override fun onResponse(
-                call: Call<Operation>,
-                response: Response<Operation>
-            ) {
-                Log.d("AddOperation", "createOperation onResponse code=${response.code()} body=${response.body()} error=${response.errorBody()?.string()}")
+            override fun onResponse(call: Call<Operation>, response: Response<Operation>) {
+                Log.d(
+                    "AddOperation",
+                    "createOperation onResponse code=${response.code()} body=${response.body()} error=${response.errorBody()?.string()}"
+                )
                 if (response.isSuccessful) {
                     showNotification("Операция успешно добавлена")
                     finish()
                 } else {
-                    Toast.makeText(this@AddOperationActivity, "Ошибка при сохранении", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@AddOperationActivity,
+                        "Ошибка при сохранении",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
 
             override fun onFailure(call: Call<Operation>, t: Throwable) {
                 Log.e("AddOperation", "createOperation onFailure", t)
-                Toast.makeText(this@AddOperationActivity, "Ошибка сети: ${t.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@AddOperationActivity,
+                    "Ошибка сети: ${t.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         })
     }
@@ -138,4 +208,3 @@ class AddOperationActivity : AppCompatActivity() {
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
 }
-
